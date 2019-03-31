@@ -180,7 +180,6 @@ void loop(){
 	}
 
 
-
 	if (currentMillis - previousMillis > 60000) {
 		previousMillis = currentMillis;
 
