@@ -57,8 +57,6 @@ void setup() {
 	digitalWrite(RF24_CS_PIN, HIGH);
 	digitalWrite(RF24_CE_PIN, HIGH);
 
-
-
     // inicialiação do RTC
 	Serial.print("Inicializando RTC..............");
     rtc.Begin();
