@@ -167,6 +167,7 @@ void loop(){
   		       	    req_index = 0;                                           // reinicia o buffer e limpa todos os elementos
 					StrClear(HTTP_req, REQ_BUF_SZ);
 					break;
+
 				}
 
 				if (c == '\n') {
