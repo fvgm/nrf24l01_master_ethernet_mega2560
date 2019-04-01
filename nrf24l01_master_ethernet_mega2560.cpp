@@ -1,33 +1,35 @@
 #include "nrf24l01_master_ethernet_mega2560.h"
 
-#include "libraries/ArduinoJson-6.x/ArduinoJson.h"
+#include "libraries/ArduinoJson-6.x/ArduinoJson-v6.10.0.h"
 #define SD_CARD_CS_PIN 4
 #define ETHERNET_CS_PIN 10
 #define RF24_CE_PIN 7
 #define RF24_CS_PIN 8
 
-#define REQ_BUF_SZ   60     // tamanho do buffer para requisições HTTP
-#define TXT_BUF_SZ   50     // tamanho do buffer do texto recebido
 
 File root;
 
 // variáveis Ethernet
-EthernetClient incomingClient;
 EthernetClient client;
+const char* server = "www.magro.eng.br";
+const char* resource = "teste_json.php";
+const unsigned long HTTP_TIMEOUT = 10000;  // max respone time from server
+const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
 byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };     // MAC Ethernet
+
 IPAddress ip(192, 168, 100, 177);                        // endereço IP do servidor WEB
-EthernetServer server(80);                               // porta 80
+//EthernetServer server(80);                               // porta 80
 File webFile;                                            // página da WEB no cartão SD
-char HTTP_req[REQ_BUF_SZ] = {0};                         // buffer para requisões HTTP
-short req_index = 0;                                     // índice para percorrer o buffer
-char txt_buf[TXT_BUF_SZ] = {0};                          // buffer para salver o texto recebido do formulário
+//char HTTP_req[REQ_BUF_SZ] = {0};                         // buffer para requisões HTTP
+//short req_index = 0;                                     // índice para percorrer o buffer
+//char txt_buf[TXT_BUF_SZ] = {0};                          // buffer para salver o texto recebido do formulário
 
 IPAddress remoteServer(107, 180, 40, 57);
 
 struct webData {
-	int a;
-	int b;
-	int c;
+	char a;
+	char b;
+	char c;
 };
 
 // variáveis do RTC
@@ -93,7 +95,7 @@ void setup() {
     Ethernet.init(ETHERNET_CS_PIN);
     delay(200);
     Ethernet.begin(mac, ip);
-    server.begin();
+    //server.begin();
 
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
       Serial.println("ERRO.");
@@ -131,8 +133,16 @@ void setup() {
 unsigned long previousMillis = 0;
 
 void loop(){
-
-
+	  if(connect(server)) {
+	    if(sendRequest(server, resource) && skipResponseHeaders()) {
+	    	webData webData;
+	      if(readReponseContent(&webData)) {
+	        printclientData(&webData);
+	      }
+	    }
+	  }
+	  disconnect();
+	  wait();
 } // loop
 
 void printDirectory(File dir, int numTabs) {
@@ -195,4 +205,90 @@ void receiveNodeData() {
 		Serial.println("A transmissão ao NODE1 falhou.");
 	}
 
+}
+
+//// funções do exemplo JSON
+
+// Open connection to the HTTP server
+bool connect(const char* hostName) {
+  Serial.print("Connect to ");
+  Serial.println(hostName);
+
+  bool ok = client.connect(hostName, 80);
+
+  Serial.println(ok ? "Connected" : "Connection Failed!");
+  return ok;
+}
+
+// Send the HTTP GET request to the server
+bool sendRequest(const char* host, const char* resource) {
+  Serial.print("GET ");
+  Serial.println(resource);
+
+  client.print("GET ");
+  client.print(resource);
+  client.println(" HTTP/1.1");
+  client.print("Host: ");
+  client.println(host);
+  client.println("Connection: close");
+  client.println();
+
+  return true;
+}
+
+// Skip HTTP headers so that we are at the beginning of the response's body
+bool skipResponseHeaders() {
+  // HTTP headers end with an empty line
+  char endOfHeaders[] = "\r\n\r\n";
+
+  client.setTimeout(HTTP_TIMEOUT);
+  bool ok = client.find(endOfHeaders);
+
+  if (!ok) {
+    Serial.println("No response or invalid response!");
+  }
+  return ok;
+}
+
+
+bool readReponseContent(struct webData* webData) {
+  // Compute optimal size of the JSON buffer according to what we need to parse.
+  // See https://bblanchon.github.io/ArduinoJson/assistant/
+  const size_t capacity = JSON_OBJECT_SIZE(3) + 10;
+  DynamicJsonDocument doc(capacity);
+
+  deserializeJson(doc, client);
+
+  // Here were copy the strings we're interested in using to your struct data
+  webData->a = doc["a"].as<char*>();
+  webData->b = doc["b"].as<char*>();
+  webData->c = doc["c"].as<char*>();
+
+  // It's not mandatory to make a copy, you could just use the pointers
+  // Since, they are pointing inside the "content" buffer, so you need to make
+  // sure it's still in memory when you read the string
+
+  return true;
+}
+
+// Print the data extracted from the JSON
+void printclientData(const struct webData* webData) {
+  Serial.print("a = ");
+  Serial.println(webData->a);
+  Serial.print("b = ");
+  Serial.println(webData->b);
+  Serial.print("c = ");
+  Serial.println(webData->c);
+}
+
+// Close the connection with the HTTP server
+void disconnect() {
+  Serial.println("Disconnect");
+  client.stop();
+}
+
+// Pause for a 1 minute
+void wait() {
+  Serial.println("Wait 10 seconds");
+  delay(10000);
 }

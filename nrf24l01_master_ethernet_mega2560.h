@@ -24,5 +24,13 @@ String formatTime(const RtcDateTime& dt, String format);
 void StrClear(char *str, char length);
 void receiveNodeData();
 
+bool connect(const char* hostName);
+bool sendRequest(const char* host, const char* resource);
+bool skipResponseHeaders();
+bool readReponseContent(struct webData* webData);
+void printclientData(const struct webData* webData);
+void disconnect();
+void wait();
+
 //Do not add code below this line
 #endif /* _nrf24l01_master_ethernet_mega2560_H_ */
