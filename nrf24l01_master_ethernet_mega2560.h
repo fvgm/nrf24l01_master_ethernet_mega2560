@@ -11,26 +11,28 @@
 #include <Ethernet.h>
 #include <SD.h>
 #include <Wire.h>
+
+#include "libraries/ArduinoJson/ArduinoJson-v5.13.5.h"
 #include "libraries/ds3231/RtcDS3231.h"
 #include "libraries/nrf24L01/nRF24L01.h"
 #include "libraries/nrf24L01/RF24_config.h"
 #include "libraries/nrf24L01/RF24.h"
 
+#define SD_CARD_CS_PIN 4
+#define ETHERNET_CS_PIN 10
+#define RF24_CE_PIN 7
+#define RF24_CS_PIN 8
+
+
+void CSpinsInitialize();
+void RTCInitialize();
+void SDCardInitialize();
+void EthernetInitialize();
+void RadioInitialize();
+
 //end of add your includes here
 
 
-void printDirectory(File dir, int numTabs);
-String formatTime(const RtcDateTime& dt, String format);
-void StrClear(char *str, char length);
-void receiveNodeData();
-
-bool connect(const char* hostName);
-bool sendRequest(const char* host, const char* resource);
-bool skipResponseHeaders();
-bool readReponseContent(struct webData* webData);
-void printclientData(const struct webData* webData);
-void disconnect();
-void wait();
 
 //Do not add code below this line
 #endif /* _nrf24l01_master_ethernet_mega2560_H_ */

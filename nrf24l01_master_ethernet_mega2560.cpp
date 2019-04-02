@@ -1,36 +1,19 @@
 #include "nrf24l01_master_ethernet_mega2560.h"
 
-#include "libraries/ArduinoJson-6.x/ArduinoJson-v6.10.0.h"
-#define SD_CARD_CS_PIN 4
-#define ETHERNET_CS_PIN 10
-#define RF24_CE_PIN 7
-#define RF24_CS_PIN 8
-
-
 File root;
-
-// variáveis Ethernet
-EthernetClient client;
-const char* server = "www.magro.eng.br";
-const char* resource = "teste_json.php";
-const unsigned long HTTP_TIMEOUT = 10000;  // max respone time from server
-const size_t MAX_CONTENT_SIZE = 512;       // max size of the HTTP response
-byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };     // MAC Ethernet
-
-IPAddress ip(192, 168, 100, 177);                        // endereço IP do servidor WEB
-//EthernetServer server(80);                               // porta 80
-File webFile;                                            // página da WEB no cartão SD
-//char HTTP_req[REQ_BUF_SZ] = {0};                         // buffer para requisões HTTP
-//short req_index = 0;                                     // índice para percorrer o buffer
-//char txt_buf[TXT_BUF_SZ] = {0};                          // buffer para salver o texto recebido do formulário
-
-IPAddress remoteServer(107, 180, 40, 57);
 
 struct webData {
 	char a;
 	char b;
 	char c;
 };
+
+// variáveis Ethernet
+EthernetClient ethernetClient;
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };     // MAC Ethernet
+
+IPAddress ip(192, 168, 100, 177);                        // endereço IP do servidor WEB
+IPAddress remoteServerAddress(107, 180, 40, 57);
 
 // variáveis do RTC
 RtcDS3231<TwoWire> rtc(Wire);
@@ -43,51 +26,125 @@ float temp;
 String data;
 int masterSendCount = 1; // armazenar a quantidade de transmissões bem-sucedidas
 
-void setup() {
 
+void setup() {
 	Serial.begin(9600); // para DEBUG
 
-	// configura os pinos CS dos periférios SPI como saídas
-	pinMode(SD_CARD_CS_PIN, OUTPUT);
+	CSpinsInitialize();
+
+    RTCInitialize();     // inicialiação do RTC
+
+	SDCardInitialize(); // inicialização do cartão SD
+
+    EthernetInitialize(); // inicialização do chip Ethernet W5100
+
+    RadioInitialize(); // inicialização do rádio nRF24L01+
+}
+
+unsigned long previousMillis = 0;
+
+void loop(){
+	if(!ethernetClient.connect(remoteServerAddress, 80)){
+		Serial.println("Conexao falhou..");
+		return;
+	}
+
+	Serial.println("Conectado!");
+
+	  // Send HTTP request
+	  ethernetClient.println(F("GET /teste_json.php HTTP/1.0"));
+	  ethernetClient.println(F("Host: magro.eng.br"));
+	  ethernetClient.println(F("Connection: close"));
+	  if (ethernetClient.println() == 0) {
+	    Serial.println(F("Failed to send request"));
+	    return;
+	  }
+
+	  // Check HTTP status
+	  char status[32] = {0};
+	  ethernetClient.readBytesUntil('\r', status, sizeof(status));
+	  if (strcmp(status, "HTTP/1.1 200 OK") != 0) {
+	    Serial.print(F("Unexpected response: "));
+	    Serial.println(status);
+	    return;
+	  }
+
+	  // Skip HTTP headers
+	  char endOfHeaders[] = "\r\n\r\n";
+	  if (!ethernetClient.find(endOfHeaders)) {
+	    Serial.println(F("Invalid response"));
+	    return;
+	  }
+
+	  // Allocate JsonBuffer
+	  // Use arduinojson.org/assistant to compute the capacity.
+	  const size_t capacity = JSON_OBJECT_SIZE(3) + 20;
+	  DynamicJsonBuffer jsonBuffer(capacity);
+
+	  // Parse JSON object
+	  JsonObject& root = jsonBuffer.parseObject(ethernetClient);
+	  if (!root.success()) {
+	    Serial.println(F("Parsing failed!"));
+	    return;
+	  }
+
+	  // Extract values
+	  Serial.println(F("Response:"));
+	  Serial.println(root["a"].as<char*>());
+	  Serial.println(root["b"].as<char*>());
+	  Serial.println(root["c"].as<char*>());
+
+	  // Disconnect
+	  ethernetClient.stop();
+	  while(1);
+
+} // loop
+
+
+
+void CSpinsInitialize() {
+
+	pinMode(SD_CARD_CS_PIN, OUTPUT);  // configura os pinos CS dos periférios SPI como saídas
 	pinMode(ETHERNET_CS_PIN, OUTPUT);
 	pinMode(RF24_CS_PIN, OUTPUT);
 	pinMode(RF24_CE_PIN, OUTPUT);
 
-	// desabilita todos os periférios SPI
-	digitalWrite(SD_CARD_CS_PIN, HIGH);
+	digitalWrite(SD_CARD_CS_PIN, HIGH);   	// desabilita todos os periférios SPI
 	digitalWrite(ETHERNET_CS_PIN, HIGH);
 	digitalWrite(RF24_CS_PIN, HIGH);
 	digitalWrite(RF24_CE_PIN, HIGH);
+}
 
-    // inicialiação do RTC
+void RTCInitialize() {
 	Serial.print("Inicializando RTC..............");
     rtc.Begin();
     rtc.Enable32kHzPin(false);
     rtc.SetSquareWavePin(DS3231SquareWavePin_ModeNone);
     now = rtc.GetDateTime();
     Serial.println("OK!");
+}
 
-	// inicialização do cartão SD
-    digitalWrite(SD_CARD_CS_PIN, LOW);
-    Serial.print("Inicializando o cartão SD......");
-    delay(1000);
+void SDCardInitialize() {
+	   digitalWrite(SD_CARD_CS_PIN, LOW);
+	    Serial.print("Inicializando o cartão SD......");
+	    delay(1000);
 
-    if (!SD.begin(SD_CARD_CS_PIN)) {
-    	Serial.println("ERRO.");
-    	while(1);
-    }
-    Serial.println("OK!");
+	    if (!SD.begin(SD_CARD_CS_PIN)) {
+	    	Serial.println("ERRO.");
+	    	while(1);
+	    }
+	    Serial.println("OK!");
 
-    Serial.print("Verificando arquivos...........");
-    if (!SD.exists("index.htm")) {
-    	Serial.println("ERRO - Impossível encontrar o arquivo index.htm!");
-		while(1);
-    }
-    Serial.println("OK!");
-    digitalWrite(SD_CARD_CS_PIN, HIGH);
+	    Serial.print("Verificando arquivos...........");
+	    if (!SD.exists("index.htm")) {
+	    	Serial.println("ERRO - Impossível encontrar o arquivo index.htm!");
+			while(1);
+	    }
+	    Serial.println("OK!");
+	    digitalWrite(SD_CARD_CS_PIN, HIGH);
+}
 
-
-    // inicialização do chip Ethernet W5100
+void EthernetInitialize() {
     digitalWrite(ETHERNET_CS_PIN, LOW);
     Serial.print("Inicializando Ethernet.........");
     delay(1000);
@@ -95,7 +152,7 @@ void setup() {
     Ethernet.init(ETHERNET_CS_PIN);
     delay(200);
     Ethernet.begin(mac, ip);
-    //server.begin();
+    ethernetClient.setTimeout(10000);
 
     if (Ethernet.hardwareStatus() == EthernetNoHardware) {
       Serial.println("ERRO.");
@@ -103,13 +160,13 @@ void setup() {
     }
     else if (Ethernet.hardwareStatus() == EthernetW5100) {
       Serial.println("OK!");
-      Serial.print("Endereço do Servidor: ");
+      Serial.print("Endereço IP: ");
       Serial.print(Ethernet.localIP());
-      Serial.println(":80");
     }
     digitalWrite(ETHERNET_CS_PIN, HIGH);
+}
 
-    // inicialização do rádio nRF24L01+
+void RadioInitialize() {
     digitalWrite(RF24_CS_PIN, LOW);
     Serial.print("Inicializando rádio...........");
 
@@ -130,165 +187,6 @@ void setup() {
     digitalWrite(RF24_CS_PIN, HIGH);
 }
 
-unsigned long previousMillis = 0;
-
-void loop(){
-	  if(connect(server)) {
-	    if(sendRequest(server, resource) && skipResponseHeaders()) {
-	    	webData webData;
-	      if(readReponseContent(&webData)) {
-	        printclientData(&webData);
-	      }
-	    }
-	  }
-	  disconnect();
-	  wait();
-} // loop
-
-void printDirectory(File dir, int numTabs) {
-  while (true) {
-
-    File entry =  dir.openNextFile();
-    if (! entry) {
-      // no more files
-      break;
-    }
-    for (uint8_t i = 0; i < numTabs; i++) {
-      Serial.print('\t');
-    }
-    Serial.print(entry.name());
-    if (entry.isDirectory()) {
-      Serial.println("/");
-      printDirectory(entry, numTabs + 1);
-    } else {
-      // files have sizes, directories do not
-      Serial.print("\t\t");
-      Serial.println(entry.size(), DEC);
-    }
-    entry.close();
-  }
-}
-
-// formatTime(now, "h:m:s")
-String formatTime(const RtcDateTime& dt, String format) {
-  String h = dt.Hour() < 10 ? "0" + String(dt.Hour()) : String(dt.Hour()) ;
-  String m = dt.Minute() < 10 ? "0" + String(dt.Minute()) : String(dt.Minute()) ;
-  String s = dt.Second() < 10 ? "0" + String(dt.Second()) : String(dt.Second()) ;
-  format.replace("h",h);
-  format.replace("m",m);
-  format.replace("s",s);
-  return format;
-}
-
-void StrClear(char *str, char length) {
-    for (int i = 0; i < length; i++) {
-        str[i] = 0;
-    }
-}
-
-void receiveNodeData() {
-	//radio.openWritingPipe(nodeAddresses[0]);
-
-	Serial.println("Tentando transmitir ao NODE1..");
-
-	bool tx_sent;
-	tx_sent = radio.write(&masterSendCount, sizeof(masterSendCount));
-
-	if (tx_sent) {
-		if (radio.isAckPayloadAvailable()) {
-			radio.read(&temp, sizeof(temp)); // ler a temperatura do nó
-			Serial.print("Recebido ");
-			Serial.print(temp);
-			Serial.println(" com sucesso.");
-		}
-	} else { // falha na transmissão
-		Serial.println("A transmissão ao NODE1 falhou.");
-	}
-
-}
-
-//// funções do exemplo JSON
-
-// Open connection to the HTTP server
-bool connect(const char* hostName) {
-  Serial.print("Connect to ");
-  Serial.println(hostName);
-
-  bool ok = client.connect(hostName, 80);
-
-  Serial.println(ok ? "Connected" : "Connection Failed!");
-  return ok;
-}
-
-// Send the HTTP GET request to the server
-bool sendRequest(const char* host, const char* resource) {
-  Serial.print("GET ");
-  Serial.println(resource);
-
-  client.print("GET ");
-  client.print(resource);
-  client.println(" HTTP/1.1");
-  client.print("Host: ");
-  client.println(host);
-  client.println("Connection: close");
-  client.println();
-
-  return true;
-}
-
-// Skip HTTP headers so that we are at the beginning of the response's body
-bool skipResponseHeaders() {
-  // HTTP headers end with an empty line
-  char endOfHeaders[] = "\r\n\r\n";
-
-  client.setTimeout(HTTP_TIMEOUT);
-  bool ok = client.find(endOfHeaders);
-
-  if (!ok) {
-    Serial.println("No response or invalid response!");
-  }
-  return ok;
-}
 
 
-bool readReponseContent(struct webData* webData) {
-  // Compute optimal size of the JSON buffer according to what we need to parse.
-  // See https://bblanchon.github.io/ArduinoJson/assistant/
-  const size_t capacity = JSON_OBJECT_SIZE(3) + 10;
-  DynamicJsonDocument doc(capacity);
 
-  deserializeJson(doc, client);
-
-  // Here were copy the strings we're interested in using to your struct data
-  webData->a = doc["a"].as<char*>();
-  webData->b = doc["b"].as<char*>();
-  webData->c = doc["c"].as<char*>();
-
-  // It's not mandatory to make a copy, you could just use the pointers
-  // Since, they are pointing inside the "content" buffer, so you need to make
-  // sure it's still in memory when you read the string
-
-  return true;
-}
-
-// Print the data extracted from the JSON
-void printclientData(const struct webData* webData) {
-  Serial.print("a = ");
-  Serial.println(webData->a);
-  Serial.print("b = ");
-  Serial.println(webData->b);
-  Serial.print("c = ");
-  Serial.println(webData->c);
-}
-
-// Close the connection with the HTTP server
-void disconnect() {
-  Serial.println("Disconnect");
-  client.stop();
-}
-
-// Pause for a 1 minute
-void wait() {
-  Serial.println("Wait 10 seconds");
-  delay(10000);
-}
