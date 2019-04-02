@@ -26,7 +26,6 @@ float temp;
 String data;
 int masterSendCount = 1; // armazenar a quantidade de transmissões bem-sucedidas
 
-
 void setup() {
 	Serial.begin(9600); // para DEBUG
 
